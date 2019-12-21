@@ -1,0 +1,24 @@
+0.8 30dec2018
+* installer now inserts appid and station_id instead of old API parameters
+
+0.7 08nov2017
+* eliminate memory leak from zombie threads
+
+0.6 29dec2016
+* send json data as array, not scalar
+* display obfuscated appid in the log
+
+0.5 23dec2016
+* update to match API 3.0 specifications from OWM
+
+0.4 14oct2015
+* update readme with weewx 3.x instructions
+
+0.3 06dec2014
+* update for weewx v3
+
+0.2
+* documentation cleanup
+
+0.1 01feb2014
+* initial release as packaged weewx extension
