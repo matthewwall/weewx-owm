@@ -1,5 +1,4 @@
-# $Id: owm.py 1767 2017-11-08 13:13:33Z mwall $
-# Copyright 2013 Matthew Wall
+# Copyright 2013-2020 Matthew Wall
 """
 Upload data to OpenWeatherMap
   http://openweathermap.org
@@ -14,10 +13,18 @@ Thanks to Antonio Burriel for the dewpoint, longitude, and radiation fixes.
 
 # FIXME: set the station lat/lon/alt using [PUT]/stations/{:id}
 
-import Queue
-import syslog
-import urllib
-import urllib2
+try:
+    # Python 3
+    import queue
+except ImportError:
+    # Python 2
+    import Queue as queue
+try:
+    # Python 3
+    from urllib.request import Request
+except ImportError:
+    # Python 2
+    from urllib2 import Request
 
 try:
     import cjson as json
@@ -34,24 +41,42 @@ import weewx.restx
 import weewx.units
 from weeutil.weeutil import to_bool, accumulateLeaves
 
-VERSION = "0.8"
+VERSION = "0.9"
 
 if weewx.__version__ < "3":
     raise weewx.UnsupportedFeature("weewx 3 is required, found %s" %
                                    weewx.__version__)
 
-def logmsg(level, msg):
-    syslog.syslog(level, 'restx: OWM: %s' % msg)
+try:
+    # Test for new-style weewx logging by trying to import weeutil.logger
+    import weeutil.logger
+    import logging
+    log = logging.getLogger(__name__)
 
-def logdbg(msg):
-    logmsg(syslog.LOG_DEBUG, msg)
+    def logdbg(msg):
+        log.debug(msg)
 
-def loginf(msg):
-    logmsg(syslog.LOG_INFO, msg)
+    def loginf(msg):
+        log.info(msg)
 
-def logerr(msg):
-    logmsg(syslog.LOG_ERR, msg)
+    def logerr(msg):
+        log.error(msg)
 
+except ImportError:
+    # Old-style weewx logging
+    import syslog
+
+    def logmsg(level, msg):
+        syslog.syslog(level, 'owm: %s' % msg)
+
+    def logdbg(msg):
+        logmsg(syslog.LOG_DEBUG, msg)
+
+    def loginf(msg):
+        logmsg(syslog.LOG_INFO, msg)
+
+    def logerr(msg):
+        logmsg(syslog.LOG_ERR, msg)
 
 def _obfuscate(s):
     return ('X'*(len(s)-4) + s[-4:])
@@ -81,7 +106,7 @@ class OpenWeatherMap(weewx.restx.StdRESTful):
             site_dict = accumulateLeaves(site_dict, max_level=1)
             site_dict['appid']
             site_dict['station_id']
-        except KeyError, e:
+        except KeyError as e:
             logerr("Data will not be posted: Missing option %s" % e)
             return
         site_dict.setdefault('latitude', engine.stn_info.latitude_f)
@@ -90,7 +115,7 @@ class OpenWeatherMap(weewx.restx.StdRESTful):
         site_dict['manager_dict'] = weewx.manager.get_manager_dict(
             config_dict['DataBindings'], config_dict['Databases'], 'wx_binding')
 
-        self.archive_queue = Queue.Queue()
+        self.archive_queue = queue.Queue()
         self.archive_thread = OpenWeatherMapThread(self.archive_queue, **site_dict)
         self.archive_thread.start()
         self.bind(weewx.NEW_ARCHIVE_RECORD, self.new_archive_record)
@@ -178,7 +203,7 @@ class OpenWeatherMapThread(weewx.restx.RESTThread):
         if self.skip_upload:
             loginf("skipping upload")
             return
-        req = urllib2.Request(url, data)
+        req = Request(url, data)
         req.get_method = lambda: 'POST'
         req.add_header("Content-Type", "application/json")
         req.add_header("User-Agent", "weewx/%s" % weewx.__version__)
