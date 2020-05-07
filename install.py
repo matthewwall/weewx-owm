@@ -1,8 +1,8 @@
-# $Id: install.py 1788 2018-12-30 16:47:23Z mwall $
 # installer for OpenWeatherMap
 # Copyright 2014 Matthew Wall
+# Distributed under the terms of the GNU Public License (GPLv3)
 
-from setup import ExtensionInstaller
+from weecfg.extension import ExtensionInstaller
 
 def loader():
     return OWMInstaller()
@@ -10,7 +10,7 @@ def loader():
 class OWMInstaller(ExtensionInstaller):
     def __init__(self):
         super(OWMInstaller, self).__init__(
-            version="0.8",
+            version="0.9",
             name='owm',
             description='Upload weather data to OpenWeatherMap.',
             author="Matthew Wall",
