@@ -1,3 +1,6 @@
+0.9 06may2020
+* Ported to Python 3 and WeeWX V4 -tk
+
 0.8 30dec2018
 * installer now inserts appid and station_id instead of old API parameters
 

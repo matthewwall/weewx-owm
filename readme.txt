@@ -1,5 +1,5 @@
 owm - weewx extension that sends data to OpenWeatherMap
-Copyright 2014 Matthew Wall
+Copyright 2014-2020 Matthew Wall
 
 Installation instructions:
 

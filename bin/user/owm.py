@@ -1,5 +1,4 @@
-# $Id: owm.py 1767 2017-11-08 13:13:33Z mwall $
-# Copyright 2013 Matthew Wall
+# Copyright 2013-2020 Matthew Wall
 """
 Upload data to OpenWeatherMap
   http://openweathermap.org
@@ -14,11 +13,12 @@ Thanks to Antonio Burriel for the dewpoint, longitude, and radiation fixes.
 
 # FIXME: set the station lat/lon/alt using [PUT]/stations/{:id}
 
-import Queue
-import syslog
-import urllib
-import urllib2
-
+try:
+    # Python 3
+    import queue
+except ImportError:
+    # Python 2
+    import Queue as queue
 try:
     import cjson as json
     setattr(json, 'dumps', json.encode)
@@ -34,27 +34,42 @@ import weewx.restx
 import weewx.units
 from weeutil.weeutil import to_bool, accumulateLeaves
 
-VERSION = "0.8"
+VERSION = "0.9"
 
-if weewx.__version__ < "3":
-    raise weewx.UnsupportedFeature("weewx 3 is required, found %s" %
-                                   weewx.__version__)
+try:
+    # Test for new-style weewx logging by trying to import weeutil.logger
+    import weeutil.logger
+    import logging
+    log = logging.getLogger(__name__)
 
-def logmsg(level, msg):
-    syslog.syslog(level, 'restx: OWM: %s' % msg)
+    def logdbg(msg):
+        log.debug(msg)
 
-def logdbg(msg):
-    logmsg(syslog.LOG_DEBUG, msg)
+    def loginf(msg):
+        log.info(msg)
 
-def loginf(msg):
-    logmsg(syslog.LOG_INFO, msg)
+    def logerr(msg):
+        log.error(msg)
 
-def logerr(msg):
-    logmsg(syslog.LOG_ERR, msg)
+except ImportError:
+    # Old-style weewx logging
+    import syslog
+
+    def logmsg(level, msg):
+        syslog.syslog(level, 'owm: %s' % msg)
+
+    def logdbg(msg):
+        logmsg(syslog.LOG_DEBUG, msg)
+
+    def loginf(msg):
+        logmsg(syslog.LOG_INFO, msg)
+
+    def logerr(msg):
+        logmsg(syslog.LOG_ERR, msg)
 
 
 def _obfuscate(s):
-    return ('X'*(len(s)-4) + s[-4:])
+    return 'X' * (len(s) - 4) + s[-4:]
 
 
 class OpenWeatherMap(weewx.restx.StdRESTful):
@@ -76,12 +91,21 @@ class OpenWeatherMap(weewx.restx.StdRESTful):
         """
         super(OpenWeatherMap, self).__init__(engine, config_dict)        
         loginf('service version is %s' % VERSION)
+        # Check to make sure this version of weewx supports JSON posts.
+        # To do this, look for function weewx.restx.RESTThread.get_post_body
+        try:
+            getattr(weewx.restx.RESTThread, 'get_post_body')
+        except AttributeError:
+            loginf('WeeWX needs to be upgraded to V3.8 in order to post to OWM')
+            loginf('****   OWM upload skipped')
+            return
+
         try:
             site_dict = config_dict['StdRESTful']['OpenWeatherMap']
             site_dict = accumulateLeaves(site_dict, max_level=1)
             site_dict['appid']
             site_dict['station_id']
-        except KeyError, e:
+        except KeyError as e:
             logerr("Data will not be posted: Missing option %s" % e)
             return
         site_dict.setdefault('latitude', engine.stn_info.latitude_f)
@@ -90,7 +114,7 @@ class OpenWeatherMap(weewx.restx.StdRESTful):
         site_dict['manager_dict'] = weewx.manager.get_manager_dict(
             config_dict['DataBindings'], config_dict['Databases'], 'wx_binding')
 
-        self.archive_queue = Queue.Queue()
+        self.archive_queue = queue.Queue()
         self.archive_thread = OpenWeatherMapThread(self.archive_queue, **site_dict)
         self.archive_thread.start()
         self.bind(weewx.NEW_ARCHIVE_RECORD, self.new_archive_record)
@@ -98,6 +122,7 @@ class OpenWeatherMap(weewx.restx.StdRESTful):
 
     def new_archive_record(self, event):
         self.archive_queue.put(event.record)
+
 
 class OpenWeatherMapThread(weewx.restx.RESTThread):
 
@@ -167,24 +192,16 @@ class OpenWeatherMapThread(weewx.restx.RESTThread):
         self.server_url = server_url
         self.skip_upload = to_bool(skip_upload)
 
-    def process_record(self, record, dbm):
-        r = self.get_record(record, dbm)
-        data = self.get_data(r)
-        url = "%s?appid=%s" % (self.server_url, self.appid)
-        if weewx.debug > 1:
-            logdbg('url: %s?appid=%s' %
-                   (self.server_url, _obfuscate(self.appid)))
-            logdbg('data: %s' % data)
-        if self.skip_upload:
-            loginf("skipping upload")
-            return
-        req = urllib2.Request(url, data)
-        req.get_method = lambda: 'POST'
-        req.add_header("Content-Type", "application/json")
-        req.add_header("User-Agent", "weewx/%s" % weewx.__version__)
-        self.post_with_retries(req)
+    def format_url(self, _):
+        """Override and return the URL used to post to OWM"""
 
-    def get_data(self, in_record):
+        url = "%s?appid=%s" % (self.server_url, self.appid)
+        return url
+
+
+    def get_post_body(self, in_record):
+        """Override, then supply the body and MIME type of the POST."""
+
         # put everything into the right units
         record = weewx.units.to_METRIC(in_record)
 
@@ -196,4 +213,4 @@ class OpenWeatherMapThread(weewx.restx.RESTThread):
             if rkey in record and record[rkey] is not None:
                 values[_key] = record[rkey] * self._DATA_MAP[_key][1] + self._DATA_MAP[_key][2]
         data = json.dumps([values])
-        return data
+        return data, 'application/json'
